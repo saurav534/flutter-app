@@ -3,17 +3,14 @@ import 'dart:math';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_app/repo.dart';
+import 'package:flutter_app/stats.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:synchronized/synchronized.dart';
-import 'package:vibrate/vibrate.dart';
+import 'package:vibration/vibration.dart';
 
 import 'common.dart';
-
-class MatchScore {
-  int allowedTime;
-  int actualTime;
-  bool isCorrect;
-}
 
 class GridGameState extends State<GridGame> {
   GameConfig _gameConfig;
@@ -23,26 +20,88 @@ class GridGameState extends State<GridGame> {
   var _secondElapsed = 0;
   var _paused = false;
   var _clicked = false;
+  Lock _lock = new Lock();
   BuildContext _gameContext;
   Timer _timer;
-  final _lock = new Lock();
-  var scoreCounter = List();
+
+  int _allowedTime;
+  int _actualTime;
+  bool _isCorrect;
+  bool _pointLost;
+  int _indexGreen;
+  int _greenValue;
+  int _redValue;
+
+  int _startTime;
+  List<SingleClick> _allClick = List<SingleClick>();
 
   @override
   initState() {
-    _timer = Timer.periodic(
-        Duration(seconds: 1),
-        _gameConfig.level == ToughnessLevel.Easy
-            ? _easyLevel
-            : _gameConfig.level == ToughnessLevel.Medium
-                ? _mediumLevel
-                : _hardLevel);
-
+    switch (_gameConfig.level) {
+      case ToughnessLevel.Easy:
+        _greenValue = 1;
+        _redValue = 0;
+        break;
+      case ToughnessLevel.Medium:
+        _greenValue = 1;
+        _redValue = 10;
+        break;
+      case ToughnessLevel.Hard:
+        _greenValue = 2;
+        _redValue = 11;
+        break;
+    }
+    _timer = Timer.periodic(Duration(seconds: 1), _gameTicker);
     super.initState();
   }
 
-  _checkGameEnd() {
-    if (_misses == 15) {
+  _persistScore(MatchScore ms) {
+    Score gameScore = getGameScore(ms);
+    gameScore.insertScore();
+  }
+
+  Score getGameScore(MatchScore ms) {
+    List<SingleClick> allClick = ms.allClick;
+    int addedResponseTime = 0;
+    int delayedCount = 0;
+    int correctCount = 0;
+    int wrongCount = 0;
+    int missedCount = 0;
+    int survivalTime = allClick.length;
+    for (int i = 0; i < survivalTime; i++) {
+      addedResponseTime += allClick[i].actualTime;
+      if (!allClick[i].clickMissed &&
+          allClick[i].actualTime > allClick[i].allowedTime) {
+        delayedCount++;
+      }
+      if (allClick[i].clickMissed) {
+        missedCount++;
+      } else {
+        if (allClick[i].isCorrect) {
+          correctCount++;
+        } else {
+          wrongCount++;
+        }
+      }
+    }
+    return Score(
+      survivalTime: allClick.length,
+      avgTime: (addedResponseTime.toDouble() / survivalTime).round(),
+      correctPercent: ((correctCount.toDouble() * 100.0) / survivalTime),
+      delayedPercent: ((delayedCount.toDouble() * 100.0) / survivalTime),
+      wrongPercent: ((wrongCount.toDouble() * 100.0) / survivalTime),
+      missedPercent: ((missedCount.toDouble() * 100.0) / survivalTime),
+      gameType: ms.gameType.toString().split(".")[1],
+      allClick: ms.allClick
+    );
+
+  }
+
+  bool _checkGameEnd() {
+    if (_misses == 5) {
+      _recordScore();
+      _persistScore(
+          MatchScore(gameType: _gameConfig.level, allClick: _allClick));
       setState(() {
         _paused = true;
       });
@@ -76,102 +135,79 @@ class GridGameState extends State<GridGame> {
                     _misses = 0;
                     _secondElapsed = 0;
                     _activeGrid = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+                    while (_allClick.length != 0) {
+                      _allClick.removeLast();
+                    }
                     _paused = false;
                   });
                   Navigator.of(context).pop();
+                },
+              ),
+              FlatButton(
+                child: Text('Analysis'),
+                onPressed: () {
+                  setState(() {
+                    _misses = 0;
+                    _secondElapsed = 0;
+                    _activeGrid = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+                  });
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => PerGameScore(getGameScore(MatchScore(
+                              gameType: _gameConfig.level,
+                              allClick: _allClick)))));
                 },
               )
             ],
           );
         },
       );
+      return true;
+    }
+    return false;
+  }
+
+  _recordScore() {
+    if (_secondElapsed > 0) {
+      _allClick.add(SingleClick(
+          allowedTime: _allowedTime,
+          clickMissed: !_clicked,
+          isCorrect: _isCorrect,
+          actualTime: !_clicked ? 1000 : _actualTime,
+          pointLost: _pointLost));
     }
   }
 
-  _recordScore() {}
-
-  _easyLevel(Timer t) {
+  _gameTicker(Timer t) {
     if (!_paused) {
+      if(_checkGameEnd())
+        return;
+      _startTime = new DateTime.now().millisecondsSinceEpoch;
+      _recordScore();
       setState(() {
-        var index = _random.nextInt(9);
-        _secondElapsed++;
-        _activeGrid[index] = 1;
-        Timer(
-            Duration(
-                milliseconds: 600 - _secondElapsed > 150
-                    ? 600 - _secondElapsed
-                    : 150), () {
-          if (mounted) {
-            setState(() {
-              _lock.synchronized(() {
-                if (_activeGrid[index] == 1) {
-                  _misses++;
-                  _activeGrid[index] = 0;
-                  _checkGameEnd();
-                }
-                _clicked = false;
-              });
-            });
-          }
-        });
-      });
-    }
-  }
+        _clicked = false;
+        _isCorrect = false;
+        _pointLost = false;
 
-  _mediumLevel(Timer t) {
-    if (!_paused) {
-      setState(() {
-        var indexGreen = _random.nextInt(9);
+        _indexGreen = _random.nextInt(9);
         var indexRed = _random.nextInt(9);
+
+        _activeGrid[indexRed] = _redValue;
+        _activeGrid[_indexGreen] = _greenValue;
+
+        _allowedTime = 650 - _secondElapsed > 200 ? 650 - _secondElapsed : 200;
         _secondElapsed++;
-        _activeGrid[indexRed] = 10;
-        _activeGrid[indexGreen] = 1;
-        Timer(
-            Duration(
-                milliseconds: 600 - _secondElapsed > 150
-                    ? 600 - _secondElapsed
-                    : 150), () {
+        Timer(Duration(milliseconds: _allowedTime), () {
           if (mounted) {
-            setState(() {
-              _lock.synchronized(() {
-                if (_activeGrid[indexGreen] == 1) {
+            _lock.synchronized(() {
+              setState(() {
+                if (_activeGrid[_indexGreen] == _greenValue) {
                   _misses++;
-                  _activeGrid[indexGreen] = 0;
-                  _checkGameEnd();
+                  _pointLost = true;
+                  _activeGrid[_indexGreen] = 0;
                 }
                 _activeGrid[indexRed] = 0;
-                _clicked = false;
-              });
-            });
-          }
-        });
-      });
-    }
-  }
-
-  _hardLevel(Timer t) {
-    if (!_paused) {
-      setState(() {
-        var indexGreen = _random.nextInt(9);
-        var indexRed = _random.nextInt(9);
-        _secondElapsed++;
-        _activeGrid[indexRed] = 11;
-        _activeGrid[indexGreen] = 2;
-        Timer(
-            Duration(
-                milliseconds: 600 - _secondElapsed > 150
-                    ? 600 - _secondElapsed
-                    : 150), () {
-          if (mounted) {
-            setState(() {
-              _lock.synchronized(() {
-                if (_activeGrid[indexGreen] == 2) {
-                  _misses++;
-                  _activeGrid[indexGreen] = 0;
-                  _checkGameEnd();
-                }
-                _activeGrid[indexRed] = 0;
-                _clicked = false;
               });
             });
           }
@@ -208,19 +244,25 @@ class GridGameState extends State<GridGame> {
                         ? Text("RED", style: TextStyle(color: Colors.white))
                         : null,
             onPressed: () {
+              if (Platform.isIOS) {
+                HapticFeedback.lightImpact();
+              }
               if (_clicked) return;
               var x = i;
-              setState(() {
-                _lock.synchronized(() {
-//                  _clicked = true;
+              _lock.synchronized(() {
+                setState(() {
+                  _actualTime =
+                      new DateTime.now().millisecondsSinceEpoch - _startTime;
+                  _clicked = true;
+                  _isCorrect = x == _indexGreen;
                   if (_activeGrid[x] == 1 || _activeGrid[x] == 2) {
                     _activeGrid[x] = 0;
                   } else {
                     if (_gameConfig.vibration) {
                       if (Platform.isIOS) {
-                        Vibrate.feedback(FeedbackType.error);
+                        HapticFeedback.vibrate();
                       } else {
-                        Vibrate.vibrate();
+                        Vibration.vibrate(duration: 100);
                       }
                     }
                   }
@@ -241,11 +283,11 @@ class GridGameState extends State<GridGame> {
         mainAxisAlignment: MainAxisAlignment.start,
         children: <Widget>[
           LinearProgressIndicator(
-            value: (_misses * 1.0) / 15.0,
+            value: (_misses * 1.0) / 5.0,
             backgroundColor: Colors.white30,
-            valueColor: AlwaysStoppedAnimation<Color>(_misses <= 5
+            valueColor: AlwaysStoppedAnimation<Color>(_misses <= 2
                 ? Colors.green
-                : _misses <= 10 ? Colors.orange : Colors.red),
+                : _misses <= 3 ? Colors.orange : Colors.red),
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -327,7 +369,7 @@ class GridGameState extends State<GridGame> {
                       ),
                       onPressed: () {
                         if (Platform.isIOS) {
-                          Vibrate.feedback(FeedbackType.warning);
+                          HapticFeedback.heavyImpact();
                         }
                         Timer(Duration(milliseconds: 1000), () {
                           setState(() {
@@ -351,7 +393,7 @@ class GridGameState extends State<GridGame> {
                             Icon(_paused ? Icons.play_arrow : Icons.pause),
                             Padding(
                                 padding: EdgeInsets.only(
-                                    left: 8, right: 8, top: 10, bottom: 10),
+                                    left: 8, right: 7, top: 10, bottom: 10),
                                 child: Padding(
                                     padding:
                                         EdgeInsets.only(left: _paused ? 0 : 5),
@@ -362,7 +404,7 @@ class GridGameState extends State<GridGame> {
                         ),
                         onPressed: () {
                           if (Platform.isIOS) {
-                            Vibrate.feedback(FeedbackType.impact);
+                            HapticFeedback.heavyImpact();
                           }
                           setState(() {
                             _paused = !_paused;

@@ -1,104 +1,14 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_app/history.dart';
 import 'package:flutter_app/mygrid.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 
 import 'common.dart';
 
 class HomeState extends State<Home> {
   ToughnessLevel _level = ToughnessLevel.Easy;
   bool _vibration = true;
-
-  LineChartData sampleData1() {
-    return LineChartData(
-      gridData: const FlGridData(
-        show: true,
-      ),
-      titlesData: FlTitlesData(
-        bottomTitles: SideTitles(
-          showTitles: true,
-          reservedSize: 22,
-          textStyle: TextStyle(
-            color: const Color(0xff72719b),
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-          margin: 10,
-          getTitles: (value) {
-            switch (value.toInt()) {
-              case 2:
-                return 'SEPT';
-              case 7:
-                return 'OCT';
-              case 12:
-                return 'DEC';
-            }
-            return '';
-          },
-        ),
-        leftTitles: SideTitles(
-          showTitles: true,
-          textStyle: TextStyle(
-            color: const Color(0xff75729e),
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-          margin: 8,
-          reservedSize: 30,
-        ),
-      ),
-      borderData: FlBorderData(
-          show: true,
-          border: Border(
-            bottom: BorderSide(
-              color: const Color(0xff4e4965),
-              width: 4,
-            ),
-            left: BorderSide(
-              color: Colors.transparent,
-            ),
-            right: BorderSide(
-              color: Colors.transparent,
-            ),
-            top: BorderSide(
-              color: Colors.transparent,
-            ),
-          )),
-      minX: 0,
-      maxX: 14,
-      maxY: 4,
-      minY: 0,
-      lineBarsData: linesBarData1(),
-    );
-  }
-
-  List<LineChartBarData> linesBarData1() {
-    LineChartBarData lineChartBarData1 = const LineChartBarData(
-      spots: [
-        FlSpot(1, 1),
-        FlSpot(3, 1.5),
-        FlSpot(5, 1.4),
-        FlSpot(7, 3.4),
-        FlSpot(10, 2),
-        FlSpot(12, 2.2),
-        FlSpot(13, 1.8),
-      ],
-      isCurved: true,
-      colors: [
-        Colors.green,
-      ],
-      barWidth: 4,
-      isStrokeCapRound: true,
-      dotData: FlDotData(
-        show: true,
-      ),
-      belowBarData: BarAreaData(
-        show: false,
-      ),
-    );
-    return [
-      lineChartBarData1
-    ];
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +39,15 @@ class HomeState extends State<Home> {
                       value: tl,
                       groupValue: _level,
                       onChanged: (ToughnessLevel value) {
+                        if(value == ToughnessLevel.Easy) {
+                          HapticFeedback.lightImpact();
+                        }
+                        if(value == ToughnessLevel.Medium) {
+                          HapticFeedback.mediumImpact();
+                        }
+                        if(value == ToughnessLevel.Hard) {
+                          HapticFeedback.heavyImpact();
+                        }
                         setState(() {
                           _level = value;
                         });
@@ -148,17 +67,15 @@ class HomeState extends State<Home> {
                     Switch(
                       value: _vibration,
                       onChanged: (val) {
-                        _vibration = val;
+                        setState(() {
+                          _vibration = val;
+                          if(val) {
+                            HapticFeedback.vibrate();
+                          }
+                        });
                       },
                     )
                   ],
-                ),
-                Divider(color: Colors.grey),
-                ConstrainedBox(
-                  constraints: BoxConstraints.expand(height:150.0), // adjust the height here
-                  child:LineChart(
-                      sampleData1(),
-                      swapAnimationDuration: Duration(milliseconds: 250))
                 ),
                 Divider(color: Colors.grey),
                 Center(
@@ -175,7 +92,54 @@ class HomeState extends State<Home> {
                   },
                 ))
               ],
-            )));
+            )),
+        floatingActionButton: SpeedDial(
+          // both default to 16
+          marginRight: 18,
+          marginBottom: 20,
+          animatedIcon: AnimatedIcons.menu_close,
+          animatedIconTheme: IconThemeData(size: 22.0),
+          // this is ignored if animatedIcon is non null
+          // child: Icon(Icons.add),
+          visible: true,
+          // If true user is forced to close dial manually
+          // by tapping main button and overlay is not rendered.
+          closeManually: false,
+          curve: Curves.bounceIn,
+          overlayColor: Colors.black,
+          overlayOpacity: 0.5,
+          tooltip: 'Speed Dial',
+          heroTag: 'speed-dial-hero-tag',
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 8.0,
+          shape: CircleBorder(),
+          children: [
+            SpeedDialChild(
+              child: Icon(Icons.history),
+              backgroundColor: Colors.green,
+              label: 'History',
+              labelStyle: TextStyle(fontSize: 18.0),
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (context) => History()
+              )),
+            ),
+            SpeedDialChild(
+                child: Icon(Icons.accessibility),
+                backgroundColor: Colors.red,
+                label: 'First',
+                labelStyle: TextStyle(fontSize: 18.0),
+                onTap: () => print('FIRST CHILD')),
+            SpeedDialChild(
+              child: Icon(Icons.brush),
+              backgroundColor: Colors.blue,
+              label: 'Second',
+              labelStyle: TextStyle(fontSize: 18.0),
+              onTap: () => print('SECOND CHILD'),
+            ),
+          ],
+        )
+    );
   }
 }
 

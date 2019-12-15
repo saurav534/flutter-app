@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/home.dart';
-import 'package:flutter_app/mygrid.dart';
-import 'package:flutter_app/mywidgets.dart';
 
 void main() => runApp(MyApp());
 
