@@ -51,6 +51,7 @@ class GridGameState extends State<GridGame> {
         _redValue = 11;
         break;
     }
+    _startTime = new DateTime.now().millisecondsSinceEpoch;
     _timer = Timer.periodic(Duration(seconds: 1), _gameTicker);
     super.initState();
   }
@@ -183,8 +184,8 @@ class GridGameState extends State<GridGame> {
     if (!_paused) {
       if(_checkGameEnd())
         return;
-      _startTime = new DateTime.now().millisecondsSinceEpoch;
       _recordScore();
+      _startTime = new DateTime.now().millisecondsSinceEpoch;
       setState(() {
         _clicked = false;
         _isCorrect = false;
